@@ -54,6 +54,7 @@ class BaseSMOTE(BaseOverSampler):
             "k_neighbors", self.k_neighbors, additional_neighbor=1
         )
 
+    # 生成合成样本
     def _make_samples(
         self, X, y_dtype, y_type, nn_data, nn_num, n_samples, step_size=1.0
     ):
@@ -94,11 +95,19 @@ class BaseSMOTE(BaseOverSampler):
             Target values for synthetic samples.
         """
         random_state = check_random_state(self.random_state)
+        # 得到一个数组，长度为生成样本数，每个值为随机整数
+        # 值为生成样本使用的哪个近邻(使用一个数字存储行列坐标，要用的时候再拆出来)
+        # high = nn_num矩阵元素个数
         samples_indices = random_state.randint(low=0, high=nn_num.size, size=n_samples)
 
         # np.newaxis for backwards compatability with random_state
         steps = step_size * random_state.uniform(size=n_samples)[:, np.newaxis]
+        
+        # 利用samples_indices得到每个样本随机选取的那个近邻点在nn_num中的行列索引值
+        # 以nn_num = [ [1,2,3,4,5], [2,4,6,8,9], ... ]为例
+        #除近邻个数得到行数
         rows = np.floor_divide(samples_indices, nn_num.shape[1])
+        #求近邻个数求余得到列数
         cols = np.mod(samples_indices, nn_num.shape[1])
 
         X_new = self._generate_samples(X, nn_data, nn_num, rows, cols, steps)
@@ -145,6 +154,11 @@ class BaseSMOTE(BaseOverSampler):
         X_new : {ndarray, sparse matrix} of shape (n_samples, n_features)
             Synthetically generated samples.
         """
+        #X[rows]为原始样本
+        #steps是随机比值
+        #nn_num[rows, cols]是当前所用的近邻在全量样本中的索引值
+        #nn_data[nn_num[rows, cols]]为近邻样本
+        
         diffs = nn_data[nn_num[rows, cols]] - X[rows]
 
         if sparse.issparse(X):
@@ -204,7 +218,7 @@ class BaseSMOTE(BaseOverSampler):
         else:
             raise NotImplementedError
 
-
+# SMOTE ##################################################################################
 @Substitution(
     sampling_strategy=BaseOverSampler._sampling_strategy_docstring,
     n_jobs=_n_jobs_docstring,
@@ -336,15 +350,21 @@ SMOTE # doctest: +NORMALIZE_WHITESPACE
 
         X_resampled = [X.copy()]
         y_resampled = [y.copy()]
-
+        
+        # sampling_strategy_可以是一个字典dict 存储y的类别以及对应的重采样后全部的样本数量 
+        # 例如{0:100,1:50,2:50}表示重采样后有0类样本100个，1类样本50个，2类样本50个
         for class_sample, n_samples in self.sampling_strategy_.items():
-            if n_samples == 0:
+            if n_samples == 0: #如果
                 continue
-            target_class_indices = np.flatnonzero(y == class_sample)
-            X_class = _safe_indexing(X, target_class_indices)
+            target_class_indices = np.flatnonzero(y == class_sample) # 获得属于该类的样本的索引
+            X_class = _safe_indexing(X, target_class_indices) # 得到该类的样本存在新变量X_class中
 
-            self.nn_k_.fit(X_class)
-            nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:]
+            self.nn_k_.fit(X_class) # k_nn分类器训练样本
+            nns = self.nn_k_.kneighbors(X_class, return_distance=False)[:, 1:] 
+            # 获取K近邻点的索引
+            # 例如[ [1,2,3,4,5], [2,4,6,8,9], ... ] 表示第0个样本点的5个近邻点的索引是1,2,3,4,5；第1个样本点的5个近邻点的索引是2,4,6,8,9
+            
+            # 进行过采样！具体在父类BaseSMOTE中实现
             X_new, y_new = self._make_samples(
                 X_class, y.dtype, class_sample, X_class, nns, n_samples, 1.0
             )
